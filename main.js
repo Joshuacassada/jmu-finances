@@ -21,19 +21,103 @@ const sankey = d3Sankey.sankey()
   .nodePadding(10)
   .extent([[1, 5], [width - 1, height - 5]]);
 
+function forDiagram4(jmuData) {
+  const athleticsData = jmuData["jmu-athletics"];
+  const nodes = getNodes(athleticsData);
+  const links = getLinks(athleticsData, nodes);
+  return { nodes, links };
+}
+
+function getNodes(athleticsData) {
+  const sportPrograms = ['football', 'men\'s basketball', 'women\'s basketball', 'other sports', 'non-program specific'];
+  const col1Nodes = sportPrograms.map(sport => ({
+    name: `source-${sport}`,
+    title: sport.charAt(0).toUpperCase() + sport.slice(1)
+  }));
+
+  const col2Nodes = athleticsData
+    .slice(0, 11)
+    .map(item => ({
+      name: `revenue-${item.name.toLowerCase().replace(/\s+/g, '-')}`,
+      title: item.name
+    }));
+
+  const col3Nodes = [{
+    name: 'jmu-athletics',
+    title: 'JMU Athletics'
+  }];
+
+  const col4Nodes = athleticsData
+    .slice(11)
+    .map(item => ({
+      name: `expense-${item.name.toLowerCase().replace(/\s+/g, '-')}`,
+      title: item.name
+    }));
+
+  const col5Nodes = sportPrograms.map(sport => ({
+    name: `target-${sport}`,
+    title: sport.charAt(0).toUpperCase() + sport.slice(1)
+  }));
+
+  return [...col1Nodes, ...col2Nodes, ...col3Nodes, ...col4Nodes, ...col5Nodes];
+}
+
+function getLinks(athleticsData, nodes) {
+  const links = [];
+  const sportColumns = ['Football', 'Men\'s Basketball', 'Women\'s Basketball', 'Other sports', 'Non-Program Specific'];
+  
+  athleticsData.slice(0, 11).forEach(revenueItem => {
+    sportColumns.forEach(sport => {
+      if (revenueItem[sport] > 0) {
+        links.push({
+          source: `source-${sport.toLowerCase()}`,
+          target: `revenue-${revenueItem.name.toLowerCase().replace(/\s+/g, '-')}`,
+          value: revenueItem[sport]
+        });
+      }
+    });
+  });
+
+  athleticsData.slice(0, 11).forEach(revenueItem => {
+    links.push({
+      source: `revenue-${revenueItem.name.toLowerCase().replace(/\s+/g, '-')}`,
+      target: 'jmu-athletics',
+      value: revenueItem.Total
+    });
+  });
+
+  athleticsData.slice(11).forEach(expenseItem => {
+    links.push({
+      source: 'jmu-athletics',
+      target: `expense-${expenseItem.name}`,
+      value: expenseItem.Total
+    });
+  });
+
+  athleticsData.slice(11).forEach(expenseItem => {
+    sportColumns.forEach(sport => {
+      if (expenseItem[sport] > 0) {
+        links.push({
+          source: `expense-${expenseItem.name}`,
+          target: `target-${sport.toLowerCase()}`,
+          value: expenseItem[sport]
+        });
+      }
+    });
+  });
+
+  return links;
+}
+
 async function init() {
-  const data = await d3.json("data/data_sankey.json");
-  // Applies it to the data. We make a copy of the nodes and links objects
-  // so as to avoid mutating the original.
+  const jmuData = await d3.json("data/jmu.json");
+  const data = forDiagram4(jmuData);
+
+  // Applies it to the data
   const { nodes, links } = sankey({
-  // const tmp = sankey({
     nodes: data.nodes.map(d => Object.assign({}, d)),
     links: data.links.map(d => Object.assign({}, d))
   });
-
-  // console.log('tmp', tmp);
-  console.log('nodes', nodes);
-  console.log('links', links);
 
   // Defines a color scale.
   const color = d3.scaleOrdinal(d3.schemeCategory10);
@@ -52,9 +136,7 @@ async function init() {
 
   // Adds a title on the nodes.
   rect.append("title")
-    .text(d => {
-      console.log('d', d);
-      return `${d.name}\n${format(d.value)}`});
+    .text(d => `${d.name}\n${format(d.value)}`);
 
   // Creates the paths that represent the links.
   const link = svg.append("g")
@@ -68,7 +150,7 @@ async function init() {
   // Creates a gradient, if necessary, for the source-target color option.
   if (linkColor === "source-target") {
     const gradient = link.append("linearGradient")
-      .attr("id", d => (d.uid = `link-${d.index}`))
+      .attr("id", d => `link-${d.index}`)
       .attr("gradientUnits", "userSpaceOnUse")
       .attr("x1", d => d.source.x1)
       .attr("x2", d => d.target.x0);
@@ -82,9 +164,9 @@ async function init() {
 
   link.append("path")
     .attr("d", d3Sankey.sankeyLinkHorizontal())
-    .attr("stroke", linkColor === "source-target" ? (d) => `url(#${d.uid})`
-      : linkColor === "source" ? (d) => color(d.source.category)
-        : linkColor === "target" ? (d) => color(d.target.category)
+    .attr("stroke", linkColor === "source-target" ? d => `url(#link-${d.index})`
+      : linkColor === "source" ? d => color(d.source.category)
+        : linkColor === "target" ? d => color(d.target.category)
           : linkColor)
     .attr("stroke-width", d => Math.max(1, d.width));
 
@@ -102,26 +184,22 @@ async function init() {
     .attr("text-anchor", d => d.x0 < width / 2 ? "start" : "end")
     .text(d => d.title);
 
-    // Adds labels on the links.
+  // Adds labels on the links.
   svg.append("g")
     .selectAll()
     .data(links)
     .join("text")
     .attr("x", d => {
-      console.log('linkd', d)
       const midX = (d.source.x1 + d.target.x0) / 2;
-      return midX < width / 2 ? midX + 6 : midX - 6
+      return midX < width / 2 ? midX + 6 : midX - 6;
     })
     .attr("y", d => (d.y1 + d.y0) / 2)
     .attr("dy", "0.35em")
     .attr("text-anchor", d => d.x0 < width / 2 ? "start" : "end")
-    .text(d => {
-      console.log('linkd', d);
-      return `${d.source.title} → ${d.value} → ${d.target.title}`
-    });
+    .text(d => `${d.source.title} → ${format(d.value)} → ${d.target.title}`);
 
   const svgNode = svg.node();
-    document.body.appendChild(svgNode);
+  document.body.appendChild(svgNode);
   return svgNode;
 }
 
